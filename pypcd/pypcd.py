@@ -12,7 +12,7 @@ dimatura@cmu.edu, 2013-2018
 import re
 import struct
 import copy
-import cStringIO as sio
+from io import StringIO as sio
 import numpy as np
 import warnings
 import lzf
@@ -81,7 +81,7 @@ def parse_header(lines):
     for ln in lines:
         if ln.startswith('#') or len(ln) < 2:
             continue
-        match = re.match('(\w+)\s+([\w\s\.]+)', ln)
+        match = re.match('(\w+)\s+([-\w\s\.]+)', ln)
         if not match:
             warnings.warn("warning: can't understand line: %s" % ln)
             continue
@@ -91,11 +91,11 @@ def parse_header(lines):
         elif key in ('fields', 'type'):
             metadata[key] = value.split()
         elif key in ('size', 'count'):
-            metadata[key] = map(int, value.split())
+            metadata[key] = list(map(int, value.split(' ')))
         elif key in ('width', 'height', 'points'):
             metadata[key] = int(value)
         elif key == 'viewpoint':
-            metadata[key] = map(float, value.split())
+            metadata[key] = list(map(float, value.split()))
         elif key == 'data':
             metadata[key] = value.strip().lower()
         # TODO apparently count is not required?
@@ -207,7 +207,7 @@ def _build_dtype(metadata):
         else:
             fieldnames.extend(['%s_%04d' % (f, i) for i in xrange(c)])
             typenames.extend([np_type]*c)
-    dtype = np.dtype(zip(fieldnames, typenames))
+    dtype = np.dtype(list(zip(fieldnames, typenames)))
     return dtype
 
 
@@ -277,7 +277,7 @@ def point_cloud_from_fileobj(f):
     """
     header = []
     while True:
-        ln = f.readline().strip()
+        ln = f.readline().decode('ascii').strip()
         header.append(ln)
         if ln.startswith('DATA'):
             metadata = parse_header(header)
@@ -321,7 +321,7 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
         metadata['data'] = data_compression
 
     header = write_header(metadata)
-    fileobj.write(header)
+    fileobj.write(header.encode('ascii'))
     if metadata['data'].lower() == 'ascii':
         fmtstr = build_ascii_fmtstr(pc)
         np.savetxt(fileobj, pc.pc_data, fmt=fmtstr)
@@ -337,7 +337,7 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
         for fieldname in pc.pc_data.dtype.names:
             column = np.ascontiguousarray(pc.pc_data[fieldname]).tostring('C')
             uncompressed_lst.append(column)
-        uncompressed = ''.join(uncompressed_lst)
+        uncompressed = b''.join(uncompressed_lst)
         uncompressed_size = len(uncompressed)
         # print("uncompressed_size = %r"%(uncompressed_size))
         buf = lzf.compress(uncompressed)
@@ -693,7 +693,7 @@ class PointCloud(object):
             warnings.warn('data_compression keyword is deprecated for'
                           ' compression')
             compression = kwargs['data_compression']
-        with open(fname, 'w') as f:
+        with open(fname, 'wb') as f:
             point_cloud_to_fileobj(self, f, compression)
 
     def save_pcd_to_fileobj(self, fileobj, compression=None, **kwargs):
